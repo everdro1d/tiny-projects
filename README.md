@@ -9,4 +9,9 @@ Use branches to switch between projects.
 > 2024-09-29
 
 * [Jump to branch](https://github.com/everdro1d/tiny-projects/tree/ForTheRepublic)
-* [Download](https://github.com/everdro1d/tiny-projects/releases/tag/ForTheRepublic) 
+* [Download](https://github.com/everdro1d/tiny-projects/releases/tag/ForTheRepublic)
+
+### Quote Extractor
+> 2025-04-20
+
+* [Jump to branch](https://github.com/everdro1d/tiny-projects/tree/quote_extractor)
