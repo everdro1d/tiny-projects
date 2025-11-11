@@ -12,17 +12,31 @@ Behavior:
 - Create playlists for the authenticated user and add found tracks (100 URIs per request max)
 - Handle 429 Rate limits by reading Retry-After and retrying after (x + 1) seconds
 
+Added later:
+1. Cache successful URIs (JSON file) and prefer cached URIs over sending a network request.
+2. Added --force-search flag to override cache preference and always query Spotify.
+3. If a track is not found, attempt a cleaned retry by removing underscores, any "Part n", and any bracketed sections (with their contents) from file names and try again.
+   Example: "guy1 - The first n_ top Part 1 (beans)" -> cleaned to "guy1 - The first n top"
+4. If the artist contains "UNKNOWN ARTIST" and the track does not contain "Titel" then try searching using only the title.
+5. Added --not-found-log to record playlist and artist - track for tracks that remain unfound after all attempts.
+
 Usage:
     python app.py -i /path/to/music -e "Podcasts" -e "Audiobooks"
 
+Options added:
+    --cache-file     Path to cache file (default: .spotify_uri_cache.json)
+    --force-search   Do not prefer cache; query Spotify every time
+    --not-found-log  Path to append log file for tracks not found after all search attempts (default: .not_found_tracks.log)
 """
-
 import os
 import sys
 import argparse
 import time
 import logging
+import json
+import re
 from collections import defaultdict
+from datetime import datetime
 
 from dotenv import load_dotenv
 import spotipy
@@ -92,6 +106,21 @@ def parse_args():
         help="Create playlists as public instead of private (default is private).",
     )
     p.add_argument("--dry-run", action="store_true", help="Do everything except create playlists or add tracks.")
+    p.add_argument(
+        "--cache-file",
+        default=".spotify_uri_cache.json",
+        help="Path to JSON cache file for storing successful artist/track -> uri mappings. Default: .spotify_uri_cache.json",
+    )
+    p.add_argument(
+        "--force-search",
+        action="store_true",
+        help="Override cache preference and always query Spotify (do not use cached URIs).",
+    )
+    p.add_argument(
+        "--not-found-log",
+        default=".not_found_tracks.log",
+        help="Path to append log file for tracks not found after all search attempts. Default: .not_found_tracks.log",
+    )
     return p.parse_args()
 
 
@@ -168,19 +197,157 @@ def walk_music_folder(input_root, excludes):
     return playlists
 
 
-def find_track_uri(sp, artist, track):
+def _make_cache_key(artist, track):
     """
-    Search Spotify for artist:%artist% track:%track name% and return the first track uri or None.
+    Make a normalized cache key for artist/track pair.
+    Lowercase and collapse whitespace so lookups are consistent.
     """
-    q = f'artist:{artist} track:{track}'
-    logger.debug("Searching Spotify: %s", q)
-    res = api_call(sp.search, q=q, type="track", limit=1)
+    norm = f"{artist or ''}\x1f{track or ''}".lower()
+    # collapse whitespace
+    norm = re.sub(r"\s+", " ", norm).strip()
+    return norm
+
+
+def load_cache(path):
+    try:
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+            logger.debug("Loaded cache with %d entries from %s", len(data), path)
+            return data
+    except Exception as e:
+        logger.warning("Failed to load cache %s: %s", path, e)
+    return {}
+
+
+def save_cache(path, data):
+    try:
+        tmp = f"{path}.tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(data, fh, indent=2, ensure_ascii=False)
+        os.replace(tmp, path)
+        logger.debug("Saved cache with %d entries to %s", len(data), path)
+    except Exception as e:
+        logger.warning("Failed to save cache %s: %s", path, e)
+
+
+def find_track_uri(sp, query):
+    """
+    Low level search helper: search Spotify using an explicit query string (q)
+    and return the first track uri or None.
+    """
+    logger.debug("Searching Spotify q=%s", query)
+    res = api_call(sp.search, q=query, type="track", limit=1)
     tracks = res.get("tracks", {}).get("items", [])
     if not tracks:
-        logger.info("No match found on Spotify for: %s - %s", artist, track)
         return None
     uri = tracks[0].get("uri")
     return uri
+
+
+def clean_name(s):
+    """
+    Clean the file-name-derived string:
+      - remove underscores (replace with space)
+      - remove bracketed contents ((), [], {})
+      - remove "Part <n>" occurrences
+      - collapse whitespace and trim
+    """
+    if not s:
+        return s
+    # replace underscores with spaces
+    out = s.replace("_", " ")
+    # remove bracketed content
+    out = re.sub(r"[\(\[\{].*?[\)\]\}]", "", out)
+    # remove "Part N" (case-insensitive)
+    out = re.sub(r"\bPart\s*\d+\b", "", out, flags=re.IGNORECASE)
+    # collapse multiple spaces and trim
+    out = re.sub(r"\s+", " ", out).strip()
+    return out
+
+
+def get_track_uri_with_cache(sp, artist, track, cache, force_search=False):
+    """
+    Try to get a track URI:
+      - Prefer cache unless force_search is True.
+      - Special case: if artist contains "UNKNOWN ARTIST" and track does not contain "Titel",
+        attempt searching with only the title.
+      - If initial attempts fail, try again with cleaned artist/track (remove underscores,
+        "Part n", and bracketed contents) and try to use cache or search.
+      - If a URI is found, cache it (under normalized keys).
+    Returns (uri, used_cache_bool)
+    """
+    # normalize inputs for decisions
+    artist_str = artist or ""
+    track_str = track or ""
+
+    # helpers
+    def cache_get(a, t):
+        return cache.get(_make_cache_key(a, t))
+
+    def cache_set(a, t, uri):
+        cache[_make_cache_key(a, t)] = uri
+
+    # 1) Check cache first unless force_search
+    key_uri = None
+    if not force_search:
+        key_uri = cache_get(artist_str, track_str)
+        if key_uri:
+            logger.debug("Cache hit for '%s - %s'", artist_str, track_str)
+            return key_uri, True
+
+    # 2) Special case: UNKNOWN ARTIST -> search by title only (unless title contains 'Titel')
+    if "UNKNOWN ARTIST" in artist_str.upper() and "titel" not in track_str.lower():
+        q = f'track:{track_str}'
+        uri = find_track_uri(sp, q)
+        if uri:
+            logger.info("Found (by title only) for %s - %s", artist_str, track_str)
+            cache_set(artist_str, track_str, uri)
+            return uri, False
+
+    # 3) Standard search with both artist and track
+    q = f'artist:{artist_str} track:{track_str}'
+    uri = find_track_uri(sp, q)
+    if uri:
+        logger.debug("Found on Spotify for '%s - %s'", artist_str, track_str)
+        cache_set(artist_str, track_str, uri)
+        return uri, False
+
+    # 4) Not found: try cleaned names
+    cleaned_artist = clean_name(artist_str)
+    cleaned_track = clean_name(track_str)
+
+    # if cleaning changed, check cache for cleaned combination (unless force_search)
+    if (cleaned_artist, cleaned_track) != (artist_str, track_str):
+        if not force_search:
+            key_uri = cache_get(cleaned_artist, cleaned_track)
+            if key_uri:
+                logger.debug("Cache hit for cleaned '%s - %s' (original '%s - %s')", cleaned_artist, cleaned_track, artist_str, track_str)
+                # store under original key too for faster future lookups
+                cache_set(artist_str, track_str, key_uri)
+                return key_uri, True
+
+        # Special-case unknown artist after cleaning
+        if "UNKNOWN ARTIST" in cleaned_artist.upper() and "titel" not in cleaned_track.lower():
+            q = f'track:{cleaned_track}'
+            uri = find_track_uri(sp, q)
+            if uri:
+                logger.info("Found (by title only, after cleaning) for %s - %s", cleaned_artist, cleaned_track)
+                cache_set(artist_str, track_str, uri)
+                cache_set(cleaned_artist, cleaned_track, uri)
+                return uri, False
+
+        # Try artist+track with cleaned strings
+        q = f'artist:{cleaned_artist} track:{cleaned_track}'
+        uri = find_track_uri(sp, q)
+        if uri:
+            logger.info("Found on Spotify after cleaning for '%s - %s' (orig '%s - %s')", cleaned_artist, cleaned_track, artist_str, track_str)
+            cache_set(artist_str, track_str, uri)
+            cache_set(cleaned_artist, cleaned_track, uri)
+            return uri, False
+
+    # 5) No result
+    return None, False
 
 
 def create_playlist(sp, user_id, name, public=False, dry_run=False):
@@ -208,6 +375,30 @@ def add_tracks_to_playlist(sp, playlist_id, uris, dry_run=False):
             continue
         api_call(sp.playlist_add_items, playlist_id, chunk)
         logger.info("Added %d tracks to playlist %s", len(chunk), playlist_id)
+
+
+def log_not_found(log_path, playlist_name, artist, track, filepath=None):
+    """
+    Append an entry to the not-found log file with timestamp, playlist, artist - track, and optional path.
+    """
+    try:
+        ts = datetime.utcnow().isoformat() + "Z"
+        entry = f"{ts} | {playlist_name} | {artist} - {track}"
+        if filepath:
+            entry += f" | {filepath}"
+        entry += "\n"
+        # Ensure directory exists
+        log_dir = os.path.dirname(os.path.abspath(log_path)) or "."
+        if log_dir and not os.path.exists(log_dir):
+            try:
+                os.makedirs(log_dir, exist_ok=True)
+            except Exception:
+                pass
+        with open(log_path, "a", encoding="utf-8") as fh:
+            fh.write(entry)
+        logger.debug("Appended not-found entry to %s: %s - %s", log_path, artist, track)
+    except Exception as e:
+        logger.warning("Failed to write not-found log to %s: %s", log_path, e)
 
 
 def main():
@@ -242,6 +433,9 @@ def main():
 
     logger.info("Found %d playlists to process.", len(playlists))
 
+    # Load cache
+    cache = load_cache(args.cache_file)
+
     # Create playlists
     playlist_id_map = {}
     for pl_name in playlists:
@@ -256,19 +450,30 @@ def main():
             artist = entry["artist"]
             track = entry["track"]
             try:
-                uri = find_track_uri(sp, artist, track)
+                uri, used_cache = get_track_uri_with_cache(sp, artist, track, cache, force_search=args.force_search)
             except SpotifyException as e:
                 # If we get rate limited or similar, api_call will have handled 429, otherwise re-raise
                 logger.exception("Spotify error searching for %s - %s: %s", artist, track, e)
                 uri = None
+                used_cache = False
             if uri:
+                if used_cache:
+                    logger.debug("Using cached uri for %s - %s", artist, track)
+                else:
+                    logger.debug("Found uri for %s - %s", artist, track)
                 uris.append(uri)
             else:
                 logger.warning("Track not found on Spotify: %s - %s (file: %s)", artist, track, entry["path"])
+                # Log to the not-found file as requested
+                if args.not_found_log:
+                    log_not_found(args.not_found_log, pl_name, artist, track, entry.get("path"))
 
         logger.info("Found %d/%d tracks on Spotify for playlist '%s'", len(uris), len(tracks), pl_name)
         # Add URIs to playlist in chunks
         add_tracks_to_playlist(sp, playlist_id_map[pl_name], uris, dry_run=args.dry_run)
+
+    # Save cache
+    save_cache(args.cache_file, cache)
 
     logger.info("All done.")
 
