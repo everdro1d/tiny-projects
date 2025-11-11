@@ -22,3 +22,11 @@ Sorts the music into folders by genre only, because thats all I needed.
   * if you use Nix, the flake in the repo has the devShell included so you
     can just use nix develop, run the app and be done with it
     `nix develop github:everdro1d/tiny-projects/ipod-music-downloader`
+
+---
+
+## tiny-projects
+A collection of tiny projects that are too small to have their own repo, and that took me less than an hour to write.
+
+## Usage
+Use branches to switch between projects.
