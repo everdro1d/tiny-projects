@@ -1,0 +1,24 @@
+I have files in folders F00 counting up. These files are music files with obfuscated names. The metadata in the files however contains all the correct information.
+Here's the plan:
+1. iterate through all the music files in all the folders
+2. for each music file:
+a. create a sha1sum, add the sha1sum to the project-root/music/sha1sum folder as a file with the first line being the original path, the second line being the original file's sha1sum, the 3rd line being the copied file's path and the fourth being the copied file's path
+b. read the metadata and extract: artist, title, and genre. Any of those fields may be blank so,
+c. add a check to skip blank fields and replace with (UNKNOWN ARTIST, MISSING TITLE, MISC GENRE).
+d. copy the music file to the project-root/music/out directory. When copying:
+d-1. use genre as the parent folder to copy to under out/
+d-2. add a check if the genre folder already exists
+d-3. if it exists, proceed with copy. if not, create the folder before proceeding.
+d-4. the copied file should be named: "%artist% - %title%.%ext%"
+d-5. if the filename contains "UNKNOWN ARTIST" or "MISSING TITLE", add the path of the out/ music file to a txt file, either UNKNOWN-ARTIST.txt or MISSING-TITLE.txt, where applicable. Add each path on a new line (probably easiest to just append)
+e. compare the sha1sum of both files. if they don't match, remove the copied file and attempt a copy again. then re-check the sha1sum. if it still doesnt match, add it to a txt file named FAILED-SHA1SUM.txt.
+
+Additional:
+1. all list text files should be in the music/ directory
+2. project looks like this:
+a. project-root/
+b. music/
+c. music/Music/ (input)
+d. music/sha1sum/
+e. music/out/ (output)
+f. music/out/<GENRE-FOLDERS>/<MUSIC-FILES>
