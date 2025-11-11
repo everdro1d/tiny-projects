@@ -35,3 +35,10 @@ Python CLI site scraper made out of the need to grab all the text from a site fo
 A downloader made to get the music files off of an old iPod Classic.
 
 * [Jump to branch](https://github.com/everdro1d/tiny-projects/tree/ipod-music-downloader)
+
+### Spotify Playlist Creator
+> 2025-11-11
+
+Create spotify playlists based off of a local music folder structure with depth 1.
+
+* [Jump to branch](https://github.com/everdro1d/tiny-projects/tree/spotify-playlist-creator)
