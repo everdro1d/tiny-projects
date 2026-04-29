@@ -22,6 +22,7 @@
           propagatedBuildInputs = with pythonPackages; [
             python
             pillow
+            argcomplete
             pkgs.makeWrapper
           ];
 
@@ -49,7 +50,7 @@
 
         devShells.default = pkgs.mkShell {
           buildInputs = [
-            (pkgs.python3.withPackages (ps: with ps; [ pillow black ]))
+            (pkgs.python3.withPackages (ps: with ps; [ pillow argcomplete black ]))
             pkgs.sqlite
             pkgs.imagemagick
             pkgs.git
