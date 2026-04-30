@@ -1,9 +1,11 @@
 # hyprpaper randomizer
 Python script to randomly change my hyprpaper wallpaper to a landscape (ish) image from all files in a directory.
 Implements:
-- caching to avoid checking every time, checks -> caches match or not -> checks cache first, changes selected image if not match otherwise change wallpaper to selected image
-- history to go back up to 10 wallpapers
-- follows symlinks
+- caching to avoid checking image data every time, checks -> caches match or not
+- checks cache first, changes selected image if not match otherwise change wallpaper to selected image
+- allows for multiple caches and multiple souce dirs per cache
+- history to go back up to 50 wallpapers
+- follows symlinks and has configurable max depth to search
 - tab completion via [argcomplete](https://github.com/kislyuk/argcomplete) (bash & zsh)
 
 ## Args:
@@ -22,8 +24,6 @@ Implements:
 Tab completion is provided via [argcomplete](https://github.com/kislyuk/argcomplete) (bash & zsh).
 
 When installed via the flake, completion scripts are automatically placed in the standard locations (`share/bash-completion/completions/` and `share/zsh/site-functions/`) and will be picked up by any shell that sources system completions — no manual setup required.
-
-When using `nix develop`, completions are activated automatically by the `shellHook`.
 
 `--wallpaper-dir <TAB>` expands directories and `--cache-switch/update/delete <TAB>` suggests existing cache names.
 
