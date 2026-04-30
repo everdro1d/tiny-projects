@@ -37,6 +37,13 @@ try:
 except Exception:
     Image = None
 
+try:
+    import argcomplete
+    from argcomplete.completers import DirectoriesCompleter
+except ImportError:
+    argcomplete = None
+    DirectoriesCompleter = None
+
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
@@ -599,6 +606,19 @@ def cmd_back():
 
 
 # ---------------------------------------------------------------------------
+# Tab-completion helpers
+# ---------------------------------------------------------------------------
+
+def _complete_cache_names(**kwargs):
+    """Return existing cache names for argcomplete; --cache-delete also accepts 'all'."""
+    # Expose "all" only when completing --cache-delete (passed via action.option_strings).
+    action = kwargs.get("action")
+    if action is not None and "--cache-delete" in getattr(action, "option_strings", []):
+        return list_cache_names() + ["all"]
+    return list_cache_names()
+
+
+# ---------------------------------------------------------------------------
 # Argument parsing
 # ---------------------------------------------------------------------------
 
@@ -612,22 +632,31 @@ def parse_args():
                         help="list all caches")
     parser.add_argument("--cache-init", metavar="NAME",
                         help="initialize a new cache (sets it as active)")
-    parser.add_argument("--wallpaper-dir", metavar="PATH", action="append", dest="wallpaper_dirs",
-                        help="wallpaper source directory (repeatable, used with --cache-init)")
+    wallpaper_dir_arg = parser.add_argument(
+        "--wallpaper-dir", metavar="PATH", action="append", dest="wallpaper_dirs",
+        help="wallpaper source directory (repeatable, used with --cache-init)")
+    if DirectoriesCompleter is not None:
+        wallpaper_dir_arg.completer = DirectoriesCompleter()
     parser.add_argument("--max-depth", type=int, default=2,
                         help="maximum directory depth to scan (used with --cache-init, default: 2)")
     parser.add_argument("--no-populate", action="store_true",
                         help="skip initial population when using --cache-init")
-    parser.add_argument("--cache-update", metavar="NAME",
+    cache_update_arg = parser.add_argument("--cache-update", metavar="NAME",
                         help="update and prune a cache DB")
-    parser.add_argument("--cache-switch", metavar="NAME",
+    cache_update_arg.completer = _complete_cache_names
+    cache_switch_arg = parser.add_argument("--cache-switch", metavar="NAME",
                         help="switch to a cache, clear history, and apply a wallpaper immediately")
-    parser.add_argument("--cache-delete", metavar="NAME",
+    cache_switch_arg.completer = _complete_cache_names
+    cache_delete_arg = parser.add_argument("--cache-delete", metavar="NAME",
                         help="delete a cache (or 'all')")
+    cache_delete_arg.completer = _complete_cache_names
 
     # Normal usage
     parser.add_argument("--back", action="store_true",
                         help="rewind to previous wallpaper using global history")
+
+    if argcomplete is not None:
+        argcomplete.autocomplete(parser)
 
     return parser.parse_args()
 

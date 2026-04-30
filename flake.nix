@@ -22,10 +22,11 @@
           propagatedBuildInputs = with pythonPackages; [
             python
             pillow
+            argcomplete
             pkgs.makeWrapper
           ];
 
-          nativeBuildInputs = [ pkgs.makeWrapper ];
+          nativeBuildInputs = [ pkgs.makeWrapper pythonPackages.argcomplete ];
 
           # since upstream isn't using setuptools or poetry, install manually
           installPhase = ''
@@ -43,13 +44,19 @@
               --prefix PYTHONPATH ":" "${pythonPackages.makePythonPath propagatedBuildInputs}:$out/share/${pname}" \
               --prefix PATH ":" "${pkgs.python3}/bin"
 
+            mkdir -p $out/share/bash-completion/completions
+            register-python-argcomplete ${pname} > $out/share/bash-completion/completions/${pname}
+
+            mkdir -p $out/share/zsh/site-functions
+            register-python-argcomplete -s zsh ${pname} > $out/share/zsh/site-functions/_${pname}
+
             runHook postInstall
           '';
         };
 
         devShells.default = pkgs.mkShell {
           buildInputs = [
-            (pkgs.python3.withPackages (ps: with ps; [ pillow black ]))
+            (pkgs.python3.withPackages (ps: with ps; [ pillow argcomplete black ]))
             pkgs.sqlite
             pkgs.imagemagick
             pkgs.git
@@ -58,6 +65,7 @@
           shellHook = ''
             echo "Python dev environment ready"
             echo "try:  python3 hyprpaper-randomizer.py (run the app)"
+            eval "$(register-python-argcomplete hyprpaper-randomizer.py)"
           '';
         };
       });
