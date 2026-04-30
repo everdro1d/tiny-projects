@@ -19,19 +19,13 @@ Implements:
 
 ## Tab completion
 
-Requires `argcomplete` (included in the flake; otherwise `pip install argcomplete`).
+Tab completion is provided via [argcomplete](https://github.com/kislyuk/argcomplete) (bash & zsh).
 
-**Activate globally (once per shell):**
-```bash
-activate-global-python-argcomplete
-```
+When installed via the flake, completion scripts are automatically placed in the standard locations (`share/bash-completion/completions/` and `share/zsh/site-functions/`) and will be picked up by any shell that sources system completions — no manual setup required.
 
-**Or activate per-script** by adding this to your `~/.bashrc` / `~/.zshrc`:
-```bash
-eval "$(register-python-argcomplete hyprpaper-randomizer)"
-```
+When using `nix develop`, completions are activated automatically by the `shellHook`.
 
-Once active, `--wallpaper-dir <TAB>` expands directories and `--cache-switch/update/delete <TAB>` suggests existing cache names.
+`--wallpaper-dir <TAB>` expands directories and `--cache-switch/update/delete <TAB>` suggests existing cache names.
 
 ---
 
