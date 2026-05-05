@@ -10,6 +10,7 @@ Cache management:
   --cache-update NAME
   --cache-switch NAME
   --cache-delete NAME|all
+  --cache-cycle
 
 Normal usage (requires an active cache):
   (no args)   — pick and apply next wallpaper
@@ -560,6 +561,32 @@ def _delete_one_cache(name: str):
 
 
 # ---------------------------------------------------------------------------
+# --cache-cycle
+# ---------------------------------------------------------------------------
+
+def cmd_cache_cycle():
+    names = list_cache_names()
+    n = len(names)
+    active = get_active_cache_name()
+
+    if n <= 1: # ensure exists
+        print("Unable to cycle the cache: One or less caches found. Use --cache-init to create one.")
+        return
+
+    active_idx = 0
+    if active is None: # normal use shouldnt happen, but can if cleared
+        print("No active cache defined, starting from idx = 0.")
+    else:
+        active_idx = names.index(active)
+
+    new_idx = active_idx + 1
+    if new_idx >= n: # wrap to begin
+        new_idx = 0
+
+    new_name = names[new_idx]
+    cmd_cache_switch(new_name)
+
+# ---------------------------------------------------------------------------
 # Normal run
 # ---------------------------------------------------------------------------
 
@@ -635,8 +662,10 @@ def parse_args():
     wallpaper_dir_arg = parser.add_argument(
         "--wallpaper-dir", metavar="PATH", action="append", dest="wallpaper_dirs",
         help="wallpaper source directory (repeatable, used with --cache-init)")
+
     if DirectoriesCompleter is not None:
         wallpaper_dir_arg.completer = DirectoriesCompleter()
+
     parser.add_argument("--max-depth", type=int, default=2,
                         help="maximum directory depth to scan (used with --cache-init, default: 2)")
     parser.add_argument("--no-populate", action="store_true",
@@ -650,6 +679,8 @@ def parse_args():
     cache_delete_arg = parser.add_argument("--cache-delete", metavar="NAME",
                         help="delete a cache (or 'all')")
     cache_delete_arg.completer = _complete_cache_names
+    parser.add_argument("--cache-cycle", action="store_true",
+                        help="cycle (switch) through existing caches")
 
     # Normal usage
     parser.add_argument("--back", action="store_true",
@@ -701,6 +732,10 @@ def main():
 
     if args.back:
         cmd_back()
+        return
+
+    if args.cache_cycle:
+        cmd_cache_cycle()
         return
 
     cmd_run()

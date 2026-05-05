@@ -14,6 +14,7 @@ Implements:
 - `--cache-update NAME` : update and prune an existing cache
 - `--cache-switch NAME` : switch to a cache, clear history, and apply a wallpaper
 - `--cache-delete NAME` : delete a cache (or `all` to delete every cache)
+- `--cache-delete` : cycle (switch) through existing caches
 - `--wallpaper-dir PATH` : wallpaper source directory (repeatable, used with `--cache-init`)
 - `--max-depth N` : maximum directory depth to scan (used with `--cache-init`, default: 2)
 - `--no-populate` : skip initial population when using `--cache-init`
