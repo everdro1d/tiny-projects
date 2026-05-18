@@ -3,9 +3,10 @@ Python script to randomly change my hyprpaper wallpaper to a landscape (ish) ima
 Implements:
 - caching to avoid checking image data every time, checks -> caches match or not
 - checks cache first, changes selected image if not match otherwise change wallpaper to selected image
-- allows for multiple caches and multiple souce dirs per cache
+- allows for multiple caches and multiple source dirs per cache
 - history to go back up to 50 wallpapers
 - follows symlinks and has configurable max depth to search
+- luminance measurement for light/dark mode selection
 - tab completion via [argcomplete](https://github.com/kislyuk/argcomplete) (bash & zsh)
 
 ## Args:
@@ -14,11 +15,13 @@ Implements:
 - `--cache-update NAME` : update and prune an existing cache
 - `--cache-switch NAME` : switch to a cache, clear history, and apply a wallpaper
 - `--cache-delete NAME` : delete a cache (or `all` to delete every cache)
-- `--cache-delete` : cycle (switch) through existing caches
+- `--cache-cycle` : cycle (switch) through existing caches
 - `--wallpaper-dir PATH` : wallpaper source directory (repeatable, used with `--cache-init`)
 - `--max-depth N` : maximum directory depth to scan (used with `--cache-init`, default: 2)
 - `--no-populate` : skip initial population when using `--cache-init`
 - `--back` : rewind to previous wallpaper using history
+- `--light` : select only light wallpapers (luminance > midpoint)
+- `--dark` : select only dark wallpapers (luminance < midpoint)
 
 ## Tab completion
 
