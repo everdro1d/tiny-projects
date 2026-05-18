@@ -32,14 +32,14 @@ import os
 import sys
 import time
 import random
-import statistics
 import subprocess
 import argparse
 
 try:
-    from PIL import Image
+    from PIL import Image, ImageStat
 except Exception:
     Image = None
+    ImageStat = None
 
 try:
     import argcomplete
@@ -307,23 +307,30 @@ def compute_luminance(path: Path):
     it falls within 5% of the midpoint (127.5), in which case the median is
     used instead to better distinguish light from dark images.
     """
-    if Image is None:
+    if Image is None or ImageStat is None:
         return None
     try:
         with Image.open(path) as im:
             im = im.convert("RGBA")
-            lum_values = [
-                0.299 * r + 0.587 * g + 0.114 * b
-                for r, g, b, a in im.getdata()
-                if a != 0
-            ]
-        if not lum_values:
-            return None
-        n = len(lum_values)
-        mean_lum = sum(lum_values) / n
+            # Downsample for faster luminance estimation on very large images.
+            im.thumbnail((256, 256))
+            alpha = im.getchannel("A")
+            if alpha.getbbox() is None:
+                return None
+            lum = im.convert("L")
+            mean_lum = ImageStat.Stat(lum, mask=alpha).mean[0]
         if abs(mean_lum - _LUMINANCE_MIDPOINT) <= _LUMINANCE_MIDPOINT * 0.05:
-            return statistics.median(lum_values)
-        return mean_lum
+            hist = lum.histogram(mask=alpha)
+            total = sum(hist)
+            if total == 0:
+                return None
+            halfway = (total - 1) // 2
+            running = 0
+            for value, count in enumerate(hist):
+                running += count
+                if running > halfway:
+                    return float(value)
+        return float(mean_lum)
     except Exception:
         return None
 
@@ -371,7 +378,14 @@ def run_cache_update(name: str):
     scan_started_at = int(time.time())
     scanned = updated = unchanged = pruned = matched = nonmatch = 0
 
-    for p in iter_images(sources, max_depth):
+    image_paths = list(iter_images(sources, max_depth))
+    total_images = len(image_paths)
+
+    if total_images == 0:
+        print("[Processing image 0 / 0]")
+
+    for idx, p in enumerate(image_paths, start=1):
+        print(f"\r[Processing image {idx} / {total_images}]", end="", flush=True)
         sp = str(p)
         scanned += 1
         mtime, size = file_stat(p)
@@ -381,7 +395,7 @@ def run_cache_update(name: str):
             dims = get_image_dimensions(p)
             w, h = (dims if dims else (0, 0))
             m = 1 if is_acceptable(w, h) else 0
-            lum = compute_luminance(p)
+            lum = compute_luminance(p) if m else None
             db_upsert(conn, sp, m, w, h, mtime, size, scan_started_at, lum)
             updated += 1
             if m:
@@ -395,6 +409,9 @@ def run_cache_update(name: str):
                 matched += 1
             else:
                 nonmatch += 1
+
+    if total_images > 0:
+        print()
 
     pruned = db_prune(conn, scan_started_at)
     conn.commit()
