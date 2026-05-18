@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-hyprpaper-randomizer.py  (v2)
+hyprpaper-randomizer.py  (v3)
 
 Multi-cache wallpaper selector for hyprpaper.
 
@@ -15,6 +15,8 @@ Cache management:
 Normal usage (requires an active cache):
   (no args)   — pick and apply next wallpaper
   --back      — rewind to previous wallpaper using global history
+  --light     — prefer light wallpapers (luminance > midpoint)
+  --dark      — prefer dark wallpapers (luminance < midpoint)
 
 Storage layout (~/.cache/hyprpaper-randomizer/):
   active-cache        — text file with the active cache name
@@ -30,6 +32,7 @@ import os
 import sys
 import time
 import random
+import statistics
 import subprocess
 import argparse
 
@@ -161,10 +164,10 @@ def append_history(path: Path):
 
 
 # ---------------------------------------------------------------------------
-# SQLite DB layer (v2 schema)
+# SQLite DB layer (v3 schema)
 # ---------------------------------------------------------------------------
 
-_V2_CREATE = """
+_V3_CREATE = """
 CREATE TABLE IF NOT EXISTS images (
     path      TEXT PRIMARY KEY,
     match     INTEGER,
@@ -172,11 +175,14 @@ CREATE TABLE IF NOT EXISTS images (
     height    INTEGER,
     mtime     INTEGER,
     size      INTEGER,
-    last_seen INTEGER
+    last_seen INTEGER,
+    luminance REAL
 )
 """
-_V2_IDX_MATCH = "CREATE INDEX IF NOT EXISTS idx_match ON images(match)"
-_V2_IDX_LAST  = "CREATE INDEX IF NOT EXISTS idx_last_seen ON images(last_seen)"
+_V3_IDX_MATCH = "CREATE INDEX IF NOT EXISTS idx_match ON images(match)"
+_V3_IDX_LAST  = "CREATE INDEX IF NOT EXISTS idx_last_seen ON images(last_seen)"
+
+_LUMINANCE_MIDPOINT = 127.5
 
 
 def _is_legacy_db(conn):
@@ -185,8 +191,14 @@ def _is_legacy_db(conn):
     return cur.fetchone() is not None
 
 
+def _has_luminance_column(conn):
+    """Return True if the images table already has a luminance column."""
+    cur = conn.execute("PRAGMA table_info(images)")
+    return any(row[1] == "luminance" for row in cur.fetchall())
+
+
 def open_db(db_path: Path):
-    """Open (or create) a v2 cache DB at db_path.  Rebuilds legacy DBs."""
+    """Open (or create) a v3 cache DB at db_path.  Migrates legacy and v2 DBs."""
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(db_path), timeout=5)
     conn.row_factory = sqlite3.Row
@@ -195,10 +207,14 @@ def open_db(db_path: Path):
         conn.execute("DROP TABLE IF EXISTS cache")
         conn.execute("DROP TABLE IF EXISTS images")
         conn.commit()
-    conn.execute(_V2_CREATE)
-    conn.execute(_V2_IDX_MATCH)
-    conn.execute(_V2_IDX_LAST)
+    conn.execute(_V3_CREATE)
+    conn.execute(_V3_IDX_MATCH)
+    conn.execute(_V3_IDX_LAST)
     conn.commit()
+    # Migrate v2 → v3: add luminance column if missing.
+    if not _has_luminance_column(conn):
+        conn.execute("ALTER TABLE images ADD COLUMN luminance REAL")
+        conn.commit()
     return conn
 
 
@@ -208,18 +224,19 @@ def db_get_by_path(conn, path: str):
 
 
 def db_upsert(conn, path: str, match: int, width: int, height: int,
-              mtime: int, size: int, last_seen: int):
+              mtime: int, size: int, last_seen: int, luminance):
     conn.execute(
-        """INSERT INTO images(path, match, width, height, mtime, size, last_seen)
-           VALUES (?, ?, ?, ?, ?, ?, ?)
+        """INSERT INTO images(path, match, width, height, mtime, size, last_seen, luminance)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(path) DO UPDATE SET
                match=excluded.match,
                width=excluded.width,
                height=excluded.height,
                mtime=excluded.mtime,
                size=excluded.size,
-               last_seen=excluded.last_seen""",
-        (path, match, width, height, mtime, size, last_seen),
+               last_seen=excluded.last_seen,
+               luminance=excluded.luminance""",
+        (path, match, width, height, mtime, size, last_seen, luminance),
     )
 
 
@@ -283,6 +300,34 @@ def is_acceptable(w, h):
     return int(w) > int(h)
 
 
+def compute_luminance(path: Path):
+    """Return the luminance of an image as a float in [0, 255], or None on failure.
+
+    Pixels with alpha=0 are excluded.  The mean luminance is returned unless
+    it falls within 5% of the midpoint (127.5), in which case the median is
+    used instead to better distinguish light from dark images.
+    """
+    if Image is None:
+        return None
+    try:
+        with Image.open(path) as im:
+            im = im.convert("RGBA")
+            lum_values = [
+                0.299 * r + 0.587 * g + 0.114 * b
+                for r, g, b, a in im.getdata()
+                if a != 0
+            ]
+        if not lum_values:
+            return None
+        n = len(lum_values)
+        mean_lum = sum(lum_values) / n
+        if abs(mean_lum - _LUMINANCE_MIDPOINT) <= _LUMINANCE_MIDPOINT * 0.05:
+            return statistics.median(lum_values)
+        return mean_lum
+    except Exception:
+        return None
+
+
 # ---------------------------------------------------------------------------
 # Multi-directory scanning
 # ---------------------------------------------------------------------------
@@ -336,7 +381,8 @@ def run_cache_update(name: str):
             dims = get_image_dimensions(p)
             w, h = (dims if dims else (0, 0))
             m = 1 if is_acceptable(w, h) else 0
-            db_upsert(conn, sp, m, w, h, mtime, size, scan_started_at)
+            lum = compute_luminance(p)
+            db_upsert(conn, sp, m, w, h, mtime, size, scan_started_at, lum)
             updated += 1
             if m:
                 matched += 1
@@ -367,19 +413,32 @@ def run_cache_update(name: str):
 # Choose next wallpaper from a named cache
 # ---------------------------------------------------------------------------
 
-def choose_wallpaper(name: str):
+def choose_wallpaper(name: str, light: bool = False, dark: bool = False):
     db_path = cache_db_path(name)
     conn = open_db(db_path)
     history_set = set(load_history())
 
+    def _query(ignore_history: bool):
+        if light:
+            sql = "SELECT path FROM images WHERE match=1 AND luminance > ?"
+            params = (_LUMINANCE_MIDPOINT,)
+        elif dark:
+            sql = "SELECT path FROM images WHERE match=1 AND luminance < ?"
+            params = (_LUMINANCE_MIDPOINT,)
+        else:
+            sql = "SELECT path FROM images WHERE match=1"
+            params = ()
+        rows = conn.execute(sql, params).fetchall()
+        if ignore_history:
+            return [row[0] for row in rows]
+        return [row[0] for row in rows if row[0] not in history_set]
+
     # Prefer match=1 candidates not in history.
-    cur = conn.execute("SELECT path FROM images WHERE match=1")
-    candidates = [row[0] for row in cur.fetchall() if row[0] not in history_set]
+    candidates = _query(ignore_history=False)
 
     if not candidates:
         # Fallback: any match=1 candidate (ignore history).
-        cur = conn.execute("SELECT path FROM images WHERE match=1")
-        candidates = [row[0] for row in cur.fetchall()]
+        candidates = _query(ignore_history=True)
 
     conn.close()
 
@@ -482,7 +541,7 @@ def cmd_cache_update(name: str):
 # --cache-switch
 # ---------------------------------------------------------------------------
 
-def cmd_cache_switch(name: str):
+def cmd_cache_switch(name: str, light: bool = False, dark: bool = False):
     if load_cache_meta(name) is None:
         print(f"Error: cache '{name}' does not exist.")
         print()
@@ -512,7 +571,7 @@ def cmd_cache_switch(name: str):
         print(f"Cache '{name}' is empty — running update...")
         run_cache_update(name)
 
-    choice = choose_wallpaper(name)
+    choice = choose_wallpaper(name, light=light, dark=dark)
     if choice is None:
         msg = f"Cache '{name}' has no acceptable wallpapers."
         print(msg)
@@ -564,7 +623,7 @@ def _delete_one_cache(name: str):
 # --cache-cycle
 # ---------------------------------------------------------------------------
 
-def cmd_cache_cycle():
+def cmd_cache_cycle(light: bool = False, dark: bool = False):
     names = list_cache_names()
     n = len(names)
     active = get_active_cache_name()
@@ -584,13 +643,13 @@ def cmd_cache_cycle():
         new_idx = 0
 
     new_name = names[new_idx]
-    cmd_cache_switch(new_name)
+    cmd_cache_switch(new_name, light=light, dark=dark)
 
 # ---------------------------------------------------------------------------
 # Normal run
 # ---------------------------------------------------------------------------
 
-def cmd_run():
+def cmd_run(light: bool = False, dark: bool = False):
     name = get_active_cache_name()
     if name is None:
         msg = "No active cache. Use --cache-init NAME --wallpaper-dir PATH --max-depth INT"
@@ -604,7 +663,7 @@ def cmd_run():
         notify(msg)
         sys.exit(1)
 
-    choice = choose_wallpaper(name)
+    choice = choose_wallpaper(name, light=light, dark=dark)
     if choice is None:
         msg = f"No acceptable wallpapers in cache '{name}'. Try --cache-update {name}."
         print(msg)
@@ -651,7 +710,7 @@ def _complete_cache_names(**kwargs):
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="hyprpaper-randomizer v2 — multi-cache wallpaper selector",
+        description="hyprpaper-randomizer v3 — multi-cache wallpaper selector",
     )
 
     # Cache management
@@ -685,6 +744,12 @@ def parse_args():
     # Normal usage
     parser.add_argument("--back", action="store_true",
                         help="rewind to previous wallpaper using global history")
+
+    lum_group = parser.add_mutually_exclusive_group()
+    lum_group.add_argument("--light", action="store_true",
+                           help="select only light wallpapers (luminance > midpoint)")
+    lum_group.add_argument("--dark", action="store_true",
+                           help="select only dark wallpapers (luminance < midpoint)")
 
     if argcomplete is not None:
         argcomplete.autocomplete(parser)
@@ -723,7 +788,7 @@ def main():
         return
 
     if args.cache_switch:
-        cmd_cache_switch(args.cache_switch)
+        cmd_cache_switch(args.cache_switch, light=args.light, dark=args.dark)
         return
 
     if args.cache_delete:
@@ -735,10 +800,10 @@ def main():
         return
 
     if args.cache_cycle:
-        cmd_cache_cycle()
+        cmd_cache_cycle(light=args.light, dark=args.dark)
         return
 
-    cmd_run()
+    cmd_run(light=args.light, dark=args.dark)
 
 
 if __name__ == "__main__":
