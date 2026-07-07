@@ -22,6 +22,7 @@ Implements:
 - `--back` : rewind to previous wallpaper using history
 - `--light` : select only light wallpapers (luminance > midpoint)
 - `--dark` : select only dark wallpapers (luminance < midpoint)
+- `--fit-mode MODE` : change wallpaper fit mode (`contain`, `cover`, `tile`, or `fill`; default: `contain`)
 
 ## Tab completion
 

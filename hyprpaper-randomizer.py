@@ -17,6 +17,7 @@ Normal usage (requires an active cache):
   --back      — rewind to previous wallpaper using global history
   --light     — prefer light wallpapers (luminance > midpoint)
   --dark      — prefer dark wallpapers (luminance < midpoint)
+  --fit-mode  — change wallpaper fit mode (contain|cover|tile|fill)
 
 Storage layout (~/.cache/hyprpaper-randomizer/):
   active-cache        — text file with the active cache name
@@ -60,6 +61,7 @@ DBDIR = APPDIR / "db"
 MAXHIST = 50
 THROTTLE = Path("/tmp/hyprpaper-randomizer-throttle")
 EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
+VALID_FIT_MODES = ("contain", "cover", "tile", "fill")
 
 
 # ---------------------------------------------------------------------------
@@ -479,8 +481,8 @@ def notify(summary: str, body: str = ""):
         pass
 
 
-def apply_wallpaper(p: Path):
-    subprocess.run(["hyprctl", "hyprpaper", "wallpaper", f",{str(p)},contain"])
+def apply_wallpaper(p: Path, fit_mode: str = VALID_FIT_MODES[0]):
+    subprocess.run(["hyprctl", "hyprpaper", "wallpaper", f",{str(p)},{fit_mode}"])
 
 
 # ---------------------------------------------------------------------------
@@ -666,7 +668,7 @@ def cmd_cache_cycle(light: bool = False, dark: bool = False):
 # Normal run
 # ---------------------------------------------------------------------------
 
-def cmd_run(light: bool = False, dark: bool = False):
+def cmd_run(light: bool = False, dark: bool = False, fit_mode: str = VALID_FIT_MODES[0]):
     name = get_active_cache_name()
     if name is None:
         msg = "No active cache. Use --cache-init NAME --wallpaper-dir PATH --max-depth INT"
@@ -687,7 +689,7 @@ def cmd_run(light: bool = False, dark: bool = False):
         notify(msg)
         sys.exit(1)
 
-    apply_wallpaper(choice)
+    apply_wallpaper(choice, fit_mode=fit_mode)
     append_history(choice)
     print(f"Applied wallpaper: {choice}")
 
@@ -719,6 +721,17 @@ def _complete_cache_names(**kwargs):
     if action is not None and "--cache-delete" in getattr(action, "option_strings", []):
         return list_cache_names() + ["all"]
     return list_cache_names()
+
+
+def resolve_fit_mode(raw_fit_mode):
+    if raw_fit_mode is None:
+        return "contain"
+
+    fit_mode = raw_fit_mode.lower()
+    if fit_mode not in VALID_FIT_MODES:
+        print("Error: invalid --fit-mode. Valid values: contain, cover, tile, fill.")
+        sys.exit(2)
+    return fit_mode
 
 
 # ---------------------------------------------------------------------------
@@ -767,6 +780,8 @@ def parse_args():
                            help="select only light wallpapers (luminance > midpoint)")
     lum_group.add_argument("--dark", action="store_true",
                            help="select only dark wallpapers (luminance < midpoint)")
+    parser.add_argument("--fit-mode", metavar="MODE",
+                        help="change wallpaper fit mode (contain|cover|tile|fill)")
 
     if argcomplete is not None:
         argcomplete.autocomplete(parser)
@@ -820,7 +835,9 @@ def main():
         cmd_cache_cycle(light=args.light, dark=args.dark)
         return
 
-    cmd_run(light=args.light, dark=args.dark)
+    fit_mode = resolve_fit_mode(args.fit_mode)
+
+    cmd_run(light=args.light, dark=args.dark, fit_mode=fit_mode)
 
 
 if __name__ == "__main__":
