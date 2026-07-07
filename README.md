@@ -48,4 +48,7 @@ Create spotify playlists based off of a local music folder structure with depth 
 
 Python script to randomly change my hyprpaper wallpaper to a landscape (ish) image from all files in a directory.
 
-* [Jump to branch](https://github.com/everdro1d/tiny-projects/tree/hyprpaper-randomizer)
+* [Go to repo](https://github.com/everdro1d/hyprpaper-randomizer)
+
+> [!NOTE]
+> This script has been moved to its own repo after receiving more complex features.
