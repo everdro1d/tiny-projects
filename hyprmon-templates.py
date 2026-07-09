@@ -241,6 +241,13 @@ def append_profile(config, template_dir, profile, monitor_descriptions, tags, re
 # ---------------------------------------------------------------------------
 
 def run(config: str = CONFIG_PATH, template_dir: str = TEMPLATE_DIR, resolve: bool = False):
+    c = os.getenv("HY_TMPL_CONFIG")
+    t = os.getenv("HY_TMPL_DIR")
+    if config == CONFIG_PATH and (c is not None or c != "" ):
+        config = c
+    if template_dir == TEMPLATE_DIR and (t is not None or t != "" ):
+        template_dir = t
+
     profile = get_profile_name()
     monitor_descriptions = get_monitor_descriptions()
     tags = get_description_tags(monitor_descriptions)

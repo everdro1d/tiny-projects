@@ -6,20 +6,25 @@ by autodetecting attached monitors.
 
 
 ## Features:
-    - Autodetects attached monitors
-    - Paths can be defined via args but are set to the default .config dir
-    - Interactive tagging per monitor
-    - Position is auto by default but if a tag matches (left|right|up|down) it
-      will automatically set the position as auto-(left|right|up|down)
-    - Automatically appends the new profile to the config file
+
+- Autodetects attached monitors
+- Paths can be defined via args but are set to the default .config dir
+  - Alternatively, paths can be defined with the following env vars:
+    - `HY_TMPL_CONFIG`
+    - `HY_TMPL_DIR`
+- Interactive tagging per monitor
+- Position is auto by default but if a tag matches (left|right|up|down) it
+  will automatically set the position as auto-(left|right|up|down)
+- Automatically appends the new profile to the config file
 
 
 ## Args:
-    - `--config` define the path to config.toml
-      (default \"$HOME/.config/hyprdynamicmonitors/config.toml\")
-    - `--template-dir` define the path to the template dir (expands `~`)
-      (default \"$HOME/.config/hyprdynamicmonitors/templates/\")
-    - `--resolve` resolve relative paths to absolute for the above two args
+
+- `--config` define the path to config.toml
+  (default \"$HOME/.config/hyprdynamicmonitors/config.toml\")
+- `--template-dir` define the path to the template dir (expands `~`)
+  (default \"$HOME/.config/hyprdynamicmonitors/templates/\")
+- `--resolve` resolve relative paths to absolute for the above two args
 
 ---
 
