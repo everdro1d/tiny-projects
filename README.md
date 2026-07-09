@@ -21,9 +21,9 @@ by autodetecting attached monitors.
 ## Args:
 
 - `--config` define the path to config.toml
-  (default \"$HOME/.config/hyprdynamicmonitors/config.toml\")
+  (default \"`$HOME/.config/hyprdynamicmonitors/config.toml`\")
 - `--template-dir` define the path to the template dir (expands `~`)
-  (default \"$HOME/.config/hyprdynamicmonitors/templates/\")
+  (default \"`$HOME/.config/hyprdynamicmonitors/templates/`\")
 - `--resolve` resolve relative paths to absolute for the above two args
 
 ---
