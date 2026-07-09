@@ -46,9 +46,16 @@ Create spotify playlists based off of a local music folder structure with depth 
 # hyprpaper randomizer
 > 2025-11-16
 
+> [!NOTE]
+> This script has been moved to its own repo after receiving more complex features.
+
 Python script to randomly change my hyprpaper wallpaper to a landscape (ish) image from all files in a directory.
 
 * [Go to repo](https://github.com/everdro1d/hyprpaper-randomizer)
 
-> [!NOTE]
-> This script has been moved to its own repo after receiving more complex features.
+# hyprmon-templates
+> 2026-07-09
+
+Python script to generate a [fiffeek/hyprdynamicmonitors](https://github.com/fiffeek/hyprdynamicmonitors)
+template file from the attached monitors and automatically append the profile
+to the config.
