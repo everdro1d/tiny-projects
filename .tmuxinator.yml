@@ -1,0 +1,12 @@
+name: hyprmon-templates
+root: <%= ENV["PROJECTS"] %>/hyprmon-templates
+
+pre_window: nix develop
+
+startup_window: editor
+
+windows:
+  - editor:
+      - nvim .
+  - term:
+  - git-lg: lazygit
