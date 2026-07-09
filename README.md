@@ -20,3 +20,12 @@ by autodetecting attached monitors.
     - `--template-dir` define the path to the template dir (expands `~`)
       (default \"$HOME/.config/hyprdynamicmonitors/templates/\")
     - `--resolve` resolve relative paths to absolute for the above two args
+
+---
+
+## tiny-projects
+A collection of tiny projects that are too small to have their own repo, and that took me less than an hour to write.
+
+## Usage
+Use branches to switch between projects.
+
